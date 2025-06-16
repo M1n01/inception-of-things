@@ -1,13 +1,14 @@
-Vagrant.configure("2") do |config|
+Vagrant.configure(2) do |config|
 
 	# 共通設定
-	config.vm.box = "ubuntu/focal64"
+	config.vm.box = "bento/ubuntu-22.04-arm64"
 
-	config.vm.synced_folder ".", "/vagrant", type: "virtualbox"
+	config.vm.synced_folder ".", "/vagrant"
 
-	config.vm.provider "virtualbox" do |v|
+	config.vm.provider "vmware_desktop" do |v|
 		v.memory = 512
 		v.cpus = 1
+		v.gui = false
 	end
 
 	# マスターノード
@@ -15,10 +16,11 @@ Vagrant.configure("2") do |config|
 		server.vm.hostname = "minabeS"
 		server.vm.network "private_network", ip: "192.168.56.110"
 
-		server.vm.provision "shell", inline: <<-SHELL
-			sudo apt-get update
-			sudo apt-get install -y curl
+		server.vm.provider "vmware_desktop" do |v|
+			v.vmx["displayName"] = "minabeS"
+		end
 
+		server.vm.provision "shell", inline: <<-SHELL
 			curl -sfL https://get.k3s.io | sh -
 
 			mkdir -p /home/vagrant/.kube
@@ -37,6 +39,10 @@ Vagrant.configure("2") do |config|
 	config.vm.define "minabeSW" do |worker|
 		worker.vm.hostname = "minabeSW"
 		worker.vm.network "private_network", ip: "192.168.56.111"
+
+		worker.vm.provider "vmware_desktop" do |v|
+			v.vmx["displayName"] = "minabeSW"
+		end
 
 		worker.vm.provision "shell", inline: <<-SHELL
 			until curl -k https://192.168.56.110:6443/ping; do
