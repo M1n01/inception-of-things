@@ -1,14 +1,19 @@
 Vagrant.configure("2") do |config|
+
+	# 共通設定
 	config.vm.box = "ubuntu/focal64"
 
+	config.vm.synced_folder ".", "/vagrant", type: "virtualbox"
+
+	config.vm.provider "virtualbox" do |v|
+		v.memory = 512
+		v.cpus = 1
+	end
+
+	# マスターノード
 	config.vm.define "minabeS" do |server|
 		server.vm.hostname = "minabeS"
 		server.vm.network "private_network", ip: "192.168.56.110"
-		server.vm.provider "virtualbox" do |v|
-			v.name = "minabeS"
-			v.memory = 512
-			v.cpus = 1
-		end
 
 		server.vm.provision "shell", inline: <<-SHELL
 			sudo apt-get update
@@ -16,27 +21,41 @@ Vagrant.configure("2") do |config|
 
 			curl -sfL https://get.k3s.io | sh -
 
-			echo "alias k='kubectl'" >> ~/.bashrc
-			source ~/.bashrc
+			mkdir -p /home/vagrant/.kube
+			cp /etc/rancher/k3s/k3s.yaml /home/vagrant/.kube/config
+			chown -R vagrant:vagrant /home/vagrant/.kube/config
 
-			chmod 644 /var/lib/rancher/k3s/server/node-token
+			sudo cp /var/lib/rancher/k3s/server/node-token /home/vagrant/node-token
+			sudo chmod 600 /home/vagrant/node-token
+
+			echo "Master node setup complete!"
+			echo "Token saved to shared folder"
 		SHELL
 	end
 
+	# ワーカーノード
 	config.vm.define "minabeSW" do |worker|
 		worker.vm.hostname = "minabeSW"
 		worker.vm.network "private_network", ip: "192.168.56.111"
-		worker.vm.provider "virtualbox" do |v|
-			v.name = "minabeSW"
-			v.memory = 512
-			v.cpus = 1
-		end
 
 		worker.vm.provision "shell", inline: <<-SHELL
-			sudo apt-get update
-			sudo apt-get install -y curl
+			until curl -k https://192.168.56.110:6443/ping; do
+				echo "Waiting for master node to be ready..."
+				sleep 2
+			done
 
-			curl -sfL https://get.k3s.io | K3S_URL=https://192.168.56.110:6443 K3S_TOKEN=$(curl -s http://192.168.56.110/token) sh -
+			if [ -f /vagrant/node-token ]; then
+				TOKEN=$(cat /vagrant/node-token)
+
+				curl -sfL https://get.k3s.io | K3S_URL=https://192.168.56.110:6443 K3S_TOKEN=$TOKEN sh -
+
+				rm -f /vagrant/node-token
+
+				echo "Worker node setup complete!"
+			else
+				echo "ERROR: Token file not found in shared folder"
+				exit 1
+			fi
 		SHELL
 	end
 end
