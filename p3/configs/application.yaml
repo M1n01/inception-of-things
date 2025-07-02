@@ -4,6 +4,7 @@ metadata:
   name: wil-app
   namespace: argocd
 spec:
+  project: default
   source:
     repoURL: https://github.com/M1n01/minabe-iot-manifests.git
     targetRevision: HEAD
