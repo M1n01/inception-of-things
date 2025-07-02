@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: wil-playground-service
+  namespace: dev
+spec:
+  selector:
+    app: wil-playground-service
+  ports:
+    - port: 8080
+      targetPort: 8888

@@ -55,11 +55,25 @@ echo "K3d cluster created successfully!"
 echo "Waiting for cluster to be ready..."
 kubectl wait --for=condition=Ready nodes --all --timeout=60s
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFS_DIR="$SCRIPT_DIR/../configs"
+
+# Check if confs directory exists
+if [ ! -d "$CONFS_DIR" ]; then
+    echo "confs directory not found at $CONFS_DIR"
+    exit 1
+fi
+
 # Create namespaces
 echo "Creating namespaces..."
-kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
-kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
-kubectl create namespace prod --dry-run=client -o yaml | kubectl apply -f -
+if [ -f "$CONFS_DIR/namespace.yaml" ]; then
+    kubectl apply -f "$CONFS_DIR/namespace.yaml"
+else
+    # Fallback to manual creation
+    kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+    kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
+fi
 
 # Install ArgoCD
 echo "Installing ArgoCD..."
@@ -68,6 +82,36 @@ kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/st
 # Wait for ArgoCD to be ready
 echo "Waiting for ArgoCD to be ready..."
 kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+
+# Apply application manifests
+echo "Deploying Wil application..."
+if [ -f "$CONFS_DIR/deployment.yaml" ]; then
+    kubectl apply -f "$CONFS_DIR/deployment.yaml"
+else
+    echo "deployment.yaml not found, skipping application deployment"
+fi
+
+if [ -f "$CONFS_DIR/service.yaml" ]; then
+    kubectl apply -f "$CONFS_DIR/service.yaml"
+else
+    echo "service.yaml not found, skipping service creation"
+fi
+
+# Wait for application to be ready
+echo "Waiting for application to be ready..."
+kubectl wait --for=condition=available --timeout=120s deployment/wil-playground -n dev 2>/dev/null || echo "Application deployment may still be starting"
+
+# Apply ArgoCD Application configuration
+echo "Setting up ArgoCD Application..."
+if [ -f "$CONFS_DIR/application.yaml" ]; then
+    # Wait a bit more for ArgoCD to be fully ready
+    sleep 10
+    kubectl apply -f "$CONFS_DIR/application.yaml"
+    echo "ArgoCD Application configured"
+else
+    echo "application.yaml not found, ArgoCD Application not configured"
+    echo "You'll need to configure ArgoCD manually via the UI"
+fi
 
 # Get ArgoCD initial admin password
 echo "Getting ArgoCD admin password..."
@@ -92,7 +136,13 @@ echo ""
 echo "Useful commands:"
 echo "   kubectl get pods -n argocd"
 echo "   kubectl get pods -n dev"
+echo "   kubectl get svc -n dev"
+echo "   kubectl logs -n dev deployment/wil-playground"
 echo "   k3d cluster delete $CLUSTER_NAME  # To cleanup"
+echo ""
+echo "Application Access:"
+echo "   kubectl port-forward svc/wil-playground -n dev 8888:8888"
+echo "   Then access: http://localhost:8888"
 echo ""
 echo "Note: ArgoCD UI uses self-signed certificates, so you'll see a security warning in your browser"
 echo "To stop port forwarding: kill \$(cat /tmp/argocd-portforward.pid)"
